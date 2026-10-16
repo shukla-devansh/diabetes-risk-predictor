@@ -9,7 +9,8 @@ __pycache__/
 # Jupyter autosave folders
 .ipynb_checkpoints/
 
-# Editor / OS clutter
+# Editor / tool / OS clutter
+.claude/
 .vscode/
 .idea/
 Thumbs.db
