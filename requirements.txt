@@ -1,0 +1,13 @@
+# Pinned so CI and every laptop install exactly the same versions
+pandas==3.0.6
+numpy==2.4.6
+scikit-learn==1.9.1
+shap==0.51.0
+joblib==1.6.0
+streamlit==1.66.0
+matplotlib==3.11.2
+pytest==9.1.1
+
+# Only needed to open notebooks/eda.ipynb
+notebook==7.6.3
+ipykernel==7.4.0
