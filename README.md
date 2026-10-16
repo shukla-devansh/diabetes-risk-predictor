@@ -1,66 +1,60 @@
-# 🩺 Diabetes Risk Predictor with Explainable AI
+# Diabetes Risk Predictor
 
 [![CI](https://github.com/shukla-devansh/diabetes-risk-predictor/actions/workflows/ci.yml/badge.svg)](https://github.com/shukla-devansh/diabetes-risk-predictor/actions/workflows/ci.yml)
-![Python](https://img.shields.io/badge/python-3.11-blue)
 
-A machine learning web app that predicts a patient's risk of diabetes from 8 routine health measurements and **explains every prediction**, showing which factors pushed the risk up or down.
-
-**Highlights:** Random Forest with **76% recall / 0.82 ROC-AUC** · per-patient SHAP explanations · Streamlit app · leakage-free sklearn pipeline · 10 pytest tests · GitHub Actions CI
+A Streamlit app that predicts diabetes risk from 8 basic health measurements and uses SHAP to show which measurements pushed the risk up or down.
 
 ![App screenshot](docs/app_screenshot.jpg)
 
-> ⚠️ **Not medical advice.** This is a learning project on a small public dataset, not a diagnostic tool.
-
----
-
 ## Problem
 
-Type 2 diabetes is often caught late because early screening is inconsistent. A model that flags high-risk patients from cheap, routine measurements could help clinicians decide who needs a follow-up blood test. But in healthcare a bare risk score isn't enough: clinicians need to know **why** the model flagged someone before they can trust it. This project pairs a predictive model with SHAP explanations to provide both.
+Diabetes is often diagnosed late. A model that flags high-risk patients from routine measurements could help decide who needs a follow-up blood test. In healthcare a risk score alone isn't very useful, though: a clinician needs to see why the model flagged someone. That's why every prediction here comes with an explanation.
 
 ## Dataset
 
-[Pima Indians Diabetes Database](https://www.kaggle.com/datasets/uciml/pima-indians-diabetes-database) (National Institute of Diabetes and Digestive and Kidney Diseases): **768 women** of Pima heritage aged 21+, with 8 features (pregnancies, glucose, blood pressure, skin thickness, insulin, BMI, diabetes pedigree function, age) and a binary `Outcome`.
+[Pima Indians Diabetes Database](https://www.kaggle.com/datasets/uciml/pima-indians-diabetes-database): 768 women of Pima heritage aged 21+, with 8 features (pregnancies, glucose, blood pressure, skin thickness, insulin, BMI, diabetes pedigree function, age) and an `Outcome` column.
 
-Key findings from [the EDA notebook](notebooks/eda.ipynb):
-- **Imbalanced classes:** 34.9% diabetic, so accuracy alone is misleading.
-- **Hidden missing values:** zeros in Glucose, BloodPressure, SkinThickness, Insulin and BMI are physically impossible. Insulin is missing for **48.7%** of patients and SkinThickness for 29.6%.
-- **Glucose is the strongest signal** (correlation 0.47 with the outcome), followed by BMI and Age.
+From the [EDA notebook](notebooks/eda.ipynb):
+- 35% of patients are diabetic, so the classes are imbalanced.
+- Zeros in Glucose, BloodPressure, SkinThickness, Insulin and BMI are really missing values. Insulin is missing for almost half the rows.
+- Glucose has the strongest correlation with the outcome (0.47).
 
 ## Approach
 
-1. **Cleaning** ([src/data.py](src/data.py)): impossible zeros → missing → filled with the column median. The medians are learned from the **training set only** inside an sklearn `Pipeline`, which prevents data leakage.
-2. **Split:** 80/20, **stratified** so both sets keep the same ~35% diabetic share.
-3. **Models** ([src/train.py](src/train.py)): Logistic Regression vs. Random Forest, both with `class_weight="balanced"`. The winner is chosen by **5-fold cross-validated recall** on the training set, so the test set stays untouched until the final evaluation.
-4. **Explainability** ([src/predict.py](src/predict.py)): an exact, model-agnostic **SHAP** explainer over the whole pipeline, so the explanations refer to the raw values a user types in.
+- Replace the impossible zeros with the column median. The medians come from the training set only, inside an sklearn pipeline, to avoid data leakage.
+- Use an 80/20 stratified train/test split.
+- Train Logistic Regression and Random Forest, both with `class_weight="balanced"`.
+- Pick the model with the best 5-fold cross-validated recall on the training set.
+- Explain predictions with SHAP.
 
 ## Results
 
-Test set (154 patients, never seen during training or model selection):
+Test set (154 patients):
 
-| Model | CV Recall | Accuracy | Precision | **Recall** | F1 | ROC-AUC |
-|---|---|---|---|---|---|---|
-| Logistic Regression | 0.701 | 0.734 | 0.603 | 0.704 | 0.650 | 0.813 |
-| **Random Forest** ✅ | **0.771** | 0.734 | 0.594 | **0.759** | **0.667** | **0.819** |
+| Model | Accuracy | Precision | Recall | F1 | ROC-AUC |
+|---|---|---|---|---|---|
+| Logistic Regression | 0.734 | 0.603 | 0.704 | 0.650 | 0.813 |
+| Random Forest (chosen) | 0.721 | 0.577 | 0.759 | 0.656 | 0.817 |
 
-**Why recall is the headline metric:** in screening, a *missed* diabetic (false negative) goes home untreated, while a *false alarm* only costs a follow-up blood test. Random Forest catches **41 of the 54** diabetic patients in the test set, compared with 38 for Logistic Regression.
+I chose Random Forest because of its higher recall. In screening, missing a diabetic patient is worse than a false alarm, which only leads to an extra test. Random Forest caught 41 of the 54 diabetic patients in the test set, compared with 38 for Logistic Regression, even though its accuracy was slightly lower.
 
-### What drives the predictions (SHAP)
+### SHAP
 
-| Global importance | Direction of each feature's effect |
+| Feature importance | Effect direction |
 |---|---|
-| ![Global SHAP importance](reports/figures/shap_global_bar.png) | ![SHAP beeswarm](reports/figures/shap_beeswarm.png) |
+| ![SHAP bar](reports/figures/shap_global_bar.png) | ![SHAP beeswarm](reports/figures/shap_beeswarm.png) |
 
-Glucose dominates, followed by BMI and Age, which matches the EDA. High values (red dots) of these features push risk up.
+Glucose matters most, followed by BMI and Age, which matches the EDA.
 
-A single patient explained step by step, from the average risk to her prediction:
+One diabetic patient from the test set:
 
-![Patient waterfall](reports/figures/shap_patient_waterfall.png)
+![SHAP waterfall](reports/figures/shap_patient_waterfall.png)
 
-This diabetic patient scored only 43% (a **false negative**): her below-average BMI (27.4) and glucose (114) pulled the risk down. Explanations like this make the model's blind spots visible instead of hiding them.
+The model gave her only 45%, which makes her a false negative. Her lower BMI and glucose pulled the score down.
 
 ## How to run
 
-Requires **Python 3.11**. On Windows:
+Python 3.11, on Windows:
 
 ```bash
 git clone https://github.com/shukla-devansh/diabetes-risk-predictor.git
@@ -69,50 +63,43 @@ py -3.11 -m venv .venv
 .venv\Scripts\activate
 pip install -r requirements.txt
 
-streamlit run app.py          # launch the web app (trained model is included)
-pytest                        # run the 10 tests
-
-python -m src.train           # optional: retrain and compare models
-python -m src.explain         # optional: regenerate the SHAP charts
-python -m src.predict         # optional: explain one example patient in the terminal
+streamlit run app.py
+pytest
 ```
 
-On macOS/Linux, use `python3.11 -m venv .venv` and `source .venv/bin/activate`.
+To retrain the models and regenerate the charts:
+
+```bash
+python -m src.train
+python -m src.explain
+```
 
 ## Project structure
 
 ```
-├── app.py                 Streamlit app
-├── data/diabetes.csv      Pima dataset
-├── notebooks/eda.ipynb    Exploratory data analysis
-├── src/
-│   ├── data.py            Loading, zero→median cleaning pipeline, stratified split
-│   ├── train.py           Train, compare and save the best model
-│   ├── predict.py         Predict risk + SHAP explanation for one patient
-│   └── explain.py         Global and per-patient SHAP charts
-├── models/                Saved pipeline (model.joblib) + metrics.json
-├── reports/figures/       SHAP charts
-├── tests/                 pytest suite
-└── .github/workflows/     CI: runs pytest on every push
+app.py               Streamlit app
+data/diabetes.csv    dataset
+notebooks/eda.ipynb  exploratory analysis
+src/data.py          loading, cleaning, train/test split
+src/train.py         training and model comparison
+src/predict.py       prediction and SHAP explanation
+src/explain.py       SHAP charts
+models/              saved model and metrics
+tests/               pytest tests
 ```
 
 ## What I learned
 
-- **Metric choice is a product decision.** Accuracy was identical for both models (0.734); recall and the cost of a missed case decided the winner.
-- **Data leakage is easy to introduce.** Filling missing values *before* splitting quietly leaks test information, and wrapping preprocessing in a `Pipeline` prevents it.
-- **"0" doesn't always mean zero.** Domain knowledge (nobody has a BMI of 0) revealed that nearly half of the insulin values were missing.
-- **Overfitting:** an unconstrained Random Forest memorizes 614 rows. Limiting `max_depth` and `min_samples_leaf` kept train/test accuracy at 0.85 vs. 0.73.
-- **Explainability builds trust.** SHAP turns "58% risk" into "mostly because of age and BMI", which a clinician can sanity-check.
-- Engineering basics: pinned dependencies, tests, CI and a reproducible project layout.
+- The metric you optimize is a design decision. The model with lower accuracy was the better choice for screening.
+- Filling missing values before splitting leaks test data into training. Putting the cleaning inside a pipeline fixes that.
+- A 0 isn't always a zero. Nobody has a BMI of 0, and checking for values like that showed half the insulin data was missing.
+- An unrestricted Random Forest overfits a dataset this small, so I limited the tree depth.
+- SHAP makes it possible to check whether a prediction makes sense, instead of just trusting a number.
 
 ## Limitations
 
-- **Small dataset:** 768 rows, and a 154-patient test set means each metric has a wide margin of error.
-- **Possible bias:** the data covers only Pima women aged 21+, so the model may not generalize to men, other ethnicities or younger people. It should never be used across populations without being re-validated.
-- **Heavy missing data:** half of the insulin values are imputed with a median, which hides real variation.
-- **Probabilities are not calibrated:** `class_weight="balanced"` pushes scores upward to favor recall, so "58%" means higher risk than average, not a literal 58% chance. The Low/Medium/High cut-offs are illustrative.
-- **Dated, single-source data:** a real clinical tool would need modern, diverse data, external validation and regulatory review.
-
-## Tech stack
-
-Python · pandas · scikit-learn · SHAP · Streamlit · matplotlib · joblib · pytest · GitHub Actions
+- Small dataset (768 rows), so the test scores have a wide margin of error.
+- The data only covers Pima women aged 21 and older, so the model may be biased and shouldn't be applied to other groups without testing.
+- About half of the insulin values are imputed.
+- `class_weight="balanced"` pushes the scores up, so a "57%" should be read as above-average risk, not an exact probability. The Low/Medium/High cut-offs (30% and 60%) are my own choice.
+- This is a learning project, not a diagnostic tool.

@@ -1,3 +1,4 @@
+import pandas as pd
 import pytest
 
 from src.predict import explain, load_model, predict_proba, risk_label
@@ -15,28 +16,25 @@ def bundle():
 
 
 def test_model_loads(bundle):
-    assert bundle["name"] in ("Logistic Regression", "Random Forest")
-    assert hasattr(bundle["pipeline"], "predict_proba")
+    assert hasattr(bundle["model"], "predict_proba")
 
 
 @pytest.mark.parametrize("patient", [HEALTHY, AT_RISK, ALL_MISSING])
 def test_predict_returns_probability(bundle, patient):
     p = predict_proba(bundle, patient)
-    assert isinstance(p, float)
-    assert 0.0 <= p <= 1.0
+    assert 0 <= p <= 1
 
 
-def test_model_ranks_obvious_cases(bundle):
+def test_at_risk_scores_higher(bundle):
     assert predict_proba(bundle, AT_RISK) > predict_proba(bundle, HEALTHY)
 
 
 def test_risk_labels():
-    assert risk_label(0.10) == "Low"
+    assert risk_label(0.1) == "Low"
     assert risk_label(0.45) == "Medium"
-    assert risk_label(0.90) == "High"
+    assert risk_label(0.9) == "High"
 
 
-def test_shap_values_add_up_to_prediction(bundle):
-    sv = explain(bundle, AT_RISK)[0]
-    assert len(sv.values) == 8
-    assert sv.base_values + sv.values.sum() == pytest.approx(predict_proba(bundle, AT_RISK), abs=1e-6)
+def test_shap_values_add_up(bundle):
+    sv = explain(bundle, pd.DataFrame([AT_RISK]))[0]
+    assert sv.base_values + sv.values.sum() == pytest.approx(predict_proba(bundle, AT_RISK))

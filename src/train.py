@@ -1,10 +1,3 @@
-"""Train Logistic Regression and Random Forest, compare them, save the best.
-
-Why recall matters most here: recall = "of all patients who really have
-diabetes, how many did we catch?". In screening, a missed case (false negative)
-goes home untreated, while a false alarm only costs a follow-up blood test.
-So we pick the model that misses the fewest real cases.
-"""
 import json
 from pathlib import Path
 
@@ -14,86 +7,53 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score, roc_auc_score
 from sklearn.model_selection import cross_val_score
-from sklearn.pipeline import Pipeline
+from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 
 from src.data import build_preprocessor, load_data, split_data
 
-MODELS_DIR = Path(__file__).resolve().parent.parent / "models"
-MODEL_PATH = MODELS_DIR / "model.joblib"
-METRICS_PATH = MODELS_DIR / "metrics.json"
-
-
-def build_models():
-    # class_weight="balanced" makes each missed diabetic count ~2x more during
-    # training (there are ~2x fewer of them), nudging the model toward recall.
-    return {
-        "Logistic Regression": Pipeline([
-            ("preprocess", build_preprocessor()),
-            # LR compares coefficients across features, so put them on one scale
-            ("scale", StandardScaler()),
-            ("model", LogisticRegression(class_weight="balanced", max_iter=1000)),
-        ]),
-        "Random Forest": Pipeline([
-            ("preprocess", build_preprocessor()),
-            # max_depth / min_samples_leaf stop trees from memorising 614 rows
-            ("model", RandomForestClassifier(
-                n_estimators=300, max_depth=6, min_samples_leaf=5,
-                class_weight="balanced", random_state=42,
-            )),
-        ]),
-    }
-
-
-def evaluate(pipe, X_test, y_test):
-    pred = pipe.predict(X_test)
-    proba = pipe.predict_proba(X_test)[:, 1]
-    return {
-        "accuracy": accuracy_score(y_test, pred),
-        "precision": precision_score(y_test, pred),
-        "recall": recall_score(y_test, pred),
-        "f1": f1_score(y_test, pred),
-        "roc_auc": roc_auc_score(y_test, proba),
-    }
+MODEL_PATH = Path(__file__).parent.parent / "models" / "model.joblib"
+METRICS_PATH = MODEL_PATH.with_name("metrics.json")
 
 
 def main():
     X_train, X_test, y_train, y_test = split_data(load_data())
 
+    models = {
+        "Logistic Regression": make_pipeline(
+            build_preprocessor(), StandardScaler(),
+            LogisticRegression(class_weight="balanced", max_iter=1000)),
+        "Random Forest": make_pipeline(
+            build_preprocessor(),
+            RandomForestClassifier(n_estimators=300, max_depth=6, min_samples_leaf=5,
+                                   class_weight="balanced", random_state=42)),
+    }
+
     results = {}
-    for name, pipe in build_models().items():
-        # Choose the winner with 5-fold cross-validation on the TRAINING set, so
-        # the test set stays an untouched final exam.
-        cv_recall = cross_val_score(pipe, X_train, y_train, cv=5, scoring="recall").mean()
-        pipe.fit(X_train, y_train)
+    for name, model in models.items():
+        # choose the model using cross-validation on train, keep the test set for the end
+        cv_recall = cross_val_score(model, X_train, y_train, cv=5, scoring="recall").mean()
+        model.fit(X_train, y_train)
+        pred = model.predict(X_test)
+        proba = model.predict_proba(X_test)[:, 1]
         results[name] = {
-            "pipeline": pipe,
-            "metrics": {"cv_recall": cv_recall, **evaluate(pipe, X_test, y_test)},
-            # A big gap between train and test accuracy is a sign of overfitting
-            "train_accuracy": accuracy_score(y_train, pipe.predict(X_train)),
+            "cv_recall": round(cv_recall, 3),
+            "accuracy": round(accuracy_score(y_test, pred), 3),
+            "precision": round(precision_score(y_test, pred), 3),
+            "recall": round(recall_score(y_test, pred), 3),
+            "f1": round(f1_score(y_test, pred), 3),
+            "roc_auc": round(roc_auc_score(y_test, proba), 3),
         }
 
-    table = pd.DataFrame({n: r["metrics"] for n, r in results.items()}).T.round(3)
-    print("Test-set results (cv_recall = 5-fold CV on training data):")
-    print(table.to_string())
-    for name, r in results.items():
-        print(f"{name}: train accuracy {r['train_accuracy']:.3f} vs test {r['metrics']['accuracy']:.3f}")
+    print(pd.DataFrame(results).T)
 
-    best_name = max(results, key=lambda n: results[n]["metrics"]["cv_recall"])
-    print(f"\nBest by cross-validated recall: {best_name}")
+    # recall matters most: missing a diabetic patient is worse than a false alarm
+    best = max(results, key=lambda name: results[name]["cv_recall"])
+    print("best model:", best)
 
-    MODELS_DIR.mkdir(exist_ok=True)
-    # Save the whole pipeline (cleaning + scaling + model) so predict.py can
-    # feed raw patient values in, plus a training sample for SHAP to compare against.
-    joblib.dump({
-        "name": best_name,
-        "pipeline": results[best_name]["pipeline"],
-        "background": X_train.sample(100, random_state=42),
-    }, MODEL_PATH)
-    METRICS_PATH.write_text(json.dumps(
-        {"best_model": best_name, "results": table.to_dict(orient="index")}, indent=2,
-    ))
-    print(f"Saved {MODEL_PATH.name} and {METRICS_PATH.name} to models/")
+    joblib.dump({"name": best, "model": models[best],
+                 "background": X_train.sample(100, random_state=42)}, MODEL_PATH)
+    METRICS_PATH.write_text(json.dumps({"best_model": best, "results": results}, indent=2))
 
 
 if __name__ == "__main__":

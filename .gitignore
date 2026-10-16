@@ -1,17 +1,8 @@
-# Virtual environment: each person recreates it from requirements.txt
 .venv/
-
-# Python cache files
 __pycache__/
 *.pyc
 .pytest_cache/
-
-# Jupyter autosave folders
 .ipynb_checkpoints/
-
-# Editor / tool / OS clutter
-.claude/
 .vscode/
 .idea/
-Thumbs.db
-.DS_Store
+.claude/

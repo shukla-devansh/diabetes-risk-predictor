@@ -10,12 +10,12 @@
       "roc_auc": 0.813
     },
     "Random Forest": {
-      "cv_recall": 0.771,
-      "accuracy": 0.734,
-      "precision": 0.594,
+      "cv_recall": 0.752,
+      "accuracy": 0.721,
+      "precision": 0.577,
       "recall": 0.759,
-      "f1": 0.667,
-      "roc_auc": 0.819
+      "f1": 0.656,
+      "roc_auc": 0.817
     }
   }
 }
